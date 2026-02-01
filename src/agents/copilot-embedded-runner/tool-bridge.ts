@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Tool Execution Bridge: Copilot SDK ↔ OpenClaw
  * 

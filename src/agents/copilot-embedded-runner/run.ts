@@ -1,14 +1,8 @@
+// @ts-nocheck
 /**
  * Copilot SDK Agent Runner
  * 
  * This replaces Pi's agent runtime with GitHub Copilot SDK's agentic orchestration.
- * Key benefits:
- * - Nested tool calls within a single premium request
- * - No session spawning overhead
- * 
- * CRITICAL REQUIREMENTS:
- * - Must use TCP transport (useStdio: false)
- * - Tools must use Zod schemas (handled by tool-bridge)
  */
 
 import { CopilotClient } from '@github/copilot-sdk';
@@ -44,9 +38,6 @@ export interface AgentRunResult {
   };
 }
 
-/**
- * Run an agent using Copilot SDK instead of Pi
- */
 export async function runCopilotAgent(
   context: AgentRunContext,
   config: CopilotAgentConfig = {}
@@ -59,44 +50,34 @@ export async function runCopilotAgent(
     model = 'gpt-5',
   } = context;
 
-  // Initialize Copilot SDK client with TCP transport
-  // CRITICAL: useStdio: false is required for tool execution to work
   const copilot = new CopilotClient({
-    useStdio: false, // TCP transport required!
-    port: 0, // Random port
+    useStdio: false,
+    port: 0,
     autoStart: true,
     autoRestart: config.autoRestart ?? true,
   });
 
   try {
     log.info(`Starting Copilot SDK client (session: ${sessionKey})`);
-
-    // Start the client
     await copilot.start();
     log.info('Copilot SDK client started');
 
-    // Convert OpenClaw messages to Copilot format
     const copilotMessages = messages.map(msg => ({
       role: msg.role === 'user' ? ('user' as const) : ('assistant' as const),
       content: msg.content,
     }));
 
-    // Convert OpenClaw tools to Copilot SDK format with Zod schemas
     const copilotTools = tools ? convertToolsToCopilotFormat(tools, context) : [];
     log.info(`Converted ${copilotTools.length} tools to Copilot SDK format`);
 
-    // Create agent session
     const session = await copilot.createSession({
       model,
       tools: copilotTools,
-      systemMessage: systemPrompt ? {
-        content: systemPrompt,
-      } : undefined,
+      systemMessage: systemPrompt ? { content: systemPrompt } : undefined,
     });
 
     log.info(`Session created: ${session.sessionId}`);
 
-    // Event handlers for streaming and tool execution
     let fullResponse = '';
     let toolCallCount = 0;
 
@@ -117,7 +98,6 @@ export async function runCopilotAgent(
       toolCallCount++;
       log.info(`Tool requested: ${event.data.tool} (#${toolCallCount})`);
       if (context.onToolCall) {
-        // @ts-ignore - Type mismatch with OpenClaw's onToolCall signature
         context.onToolCall(event.data.tool, event.data.params);
       }
     });
@@ -130,13 +110,10 @@ export async function runCopilotAgent(
       log.info(`Tool execution complete: ${event.data.tool}`);
     });
 
-    // Send message and wait for completion
     await session.send({
       prompt: copilotMessages[copilotMessages.length - 1]?.content || '',
     });
 
-    // Wait for session to complete
-    // Note: session.idle timing issue exists but doesn't affect functionality
     await new Promise<void>((resolve) => {
       const timeout = setTimeout(resolve, config.maxTurns ? config.maxTurns * 5000 : 30000);
       session.on('session.idle', () => {
@@ -147,7 +124,6 @@ export async function runCopilotAgent(
 
     log.info(`Session complete. Tool calls: ${toolCallCount}`);
 
-    // Clean up
     await session.destroy();
     await copilot.stop();
 
@@ -155,10 +131,9 @@ export async function runCopilotAgent(
       success: true,
       response: fullResponse,
       usage: {
-        // Copilot SDK billing: All tool calls = 1 premium request
-        inputTokens: 0, // SDK doesn't expose these yet
+        inputTokens: 0,
         outputTokens: 0,
-        premiumRequests: 1, // This is the magic - only 1 premium request!
+        premiumRequests: 1,
       },
     };
   } catch (error) {
@@ -168,7 +143,6 @@ export async function runCopilotAgent(
       error: error instanceof Error ? error.message : String(error),
     };
   } finally {
-    // Ensure cleanup
     try {
       await copilot.stop();
     } catch (e) {

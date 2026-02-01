@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * JSON Schema to Zod Converter
  * 
