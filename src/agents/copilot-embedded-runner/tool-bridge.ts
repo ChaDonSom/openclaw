@@ -21,8 +21,8 @@ const log = createSubsystemLogger('copilot-bridge');
  */
 export async function executeOpenClawTool(
   toolName: string,
-  params: any,
-  context: AgentRunContext
+  params: Record<string, unknown>,
+  context: any
 ): Promise<any> {
   const { tools, sessionKey } = context;
   
@@ -35,7 +35,7 @@ export async function executeOpenClawTool(
   }
 
   // Find the tool by name
-  const tool = tools.find((t) => t.name === toolName);
+  const tool = tools.find((t: any) => t.name === toolName);
   
   if (!tool) {
     log.error(`Tool not found: ${toolName}`);
@@ -52,7 +52,7 @@ export async function executeOpenClawTool(
     const callId = `copilot-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
     
     // Execute the tool using OpenClaw's standard tool.execute() interface
-    const result = await tool.execute(callId, params);
+    const result = await (tool as any).execute(callId, params);
     
     log.info(`Tool executed successfully: ${toolName}`);
     return result;
@@ -73,19 +73,19 @@ export async function executeOpenClawTool(
  * This function converts OpenClaw's input_schema to Zod objects.
  */
 export function convertToolsToCopilotFormat(
-  openClawTools: AnyAgentTool[],
-  context: AgentRunContext
+  openClawTools: any[],
+  context: any
 ): Tool[] {
-  return openClawTools.map((tool) => {
+  return openClawTools.map((tool: any) => {
     try {
       // Convert JSON Schema to Zod
-      const zodSchema = jsonSchemaToZod(tool.input_schema as any);
+      const zodSchema = jsonSchemaToZod((tool.input_schema || tool.parameters) as any);
       
       // Create Copilot SDK tool using Zod schema
       return defineTool(tool.name, {
         description: tool.description,
         parameters: zodSchema,
-        handler: async (params: any) => {
+        handler: async (params: Record<string, unknown>) => {
           return await executeOpenClawTool(tool.name, params, context);
         },
       });
@@ -96,7 +96,7 @@ export function convertToolsToCopilotFormat(
       return defineTool(tool.name, {
         description: tool.description,
         parameters: z.object({}),
-        handler: async (params: any) => {
+        handler: async (params: Record<string, unknown>) => {
           return await executeOpenClawTool(tool.name, params, context);
         },
       });

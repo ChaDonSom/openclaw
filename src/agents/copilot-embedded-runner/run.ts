@@ -2,23 +2,46 @@
  * Copilot SDK Agent Runner
  * 
  * This replaces Pi's agent runtime with GitHub Copilot SDK's agentic orchestration.
- * Key benefit: Nested tool calls within a single premium request instead of spawning
- * separate agent sessions.
+ * Key benefits:
+ * - Nested tool calls within a single premium request
+ * - No session spawning overhead
+ * 
+ * CRITICAL REQUIREMENTS:
+ * - Must use TCP transport (useStdio: false)
+ * - Tools must use Zod schemas (handled by tool-bridge)
  */
 
-import { CopilotSDK } from '@github/copilot-sdk';
-import type { AgentRunContext, AgentRunResult } from '../agent-types.js';
-import { 
-  convertToolsToCopilotFormat, 
-  extractToolResultText,
-  isToolResultError 
-} from './tool-bridge.js';
+import { CopilotClient } from '@github/copilot-sdk';
+import { convertToolsToCopilotFormat } from './tool-bridge.js';
+import { createSubsystemLogger } from '../../logging/subsystem.js';
 
-interface CopilotAgentConfig {
+const log = createSubsystemLogger('copilot-runner');
+
+export interface CopilotAgentConfig {
   model?: string;
-  tools?: string[];
-  allowAll?: boolean;
+  autoRestart?: boolean;
   maxTurns?: number;
+}
+
+export interface AgentRunContext {
+  sessionKey: string;
+  messages: Array<{ role: string; content: string }>;
+  tools?: any[];
+  systemPrompt?: string;
+  model?: string;
+  onChunk?: (chunk: string) => void;
+  onToolCall?: (tool: string, params: any) => void;
+}
+
+export interface AgentRunResult {
+  success: boolean;
+  response?: string;
+  error?: string;
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+    premiumRequests: number;
+  };
 }
 
 /**
@@ -33,7 +56,7 @@ export async function runCopilotAgent(
     messages,
     tools,
     systemPrompt,
-    model = 'claude-sonnet-4',
+    model = 'gpt-5',
   } = context;
 
   // Initialize Copilot SDK client with TCP transport
@@ -47,13 +70,14 @@ export async function runCopilotAgent(
 
   try {
     log.info(`Starting Copilot SDK client (session: ${sessionKey})`);
+
     // Start the client
     await copilot.start();
     log.info('Copilot SDK client started');
 
     // Convert OpenClaw messages to Copilot format
     const copilotMessages = messages.map(msg => ({
-      role: msg.role === 'user' ? 'user' as const : 'assistant' as const,
+      role: msg.role === 'user' ? ('user' as const) : ('assistant' as const),
       content: msg.content,
     }));
 
@@ -76,20 +100,20 @@ export async function runCopilotAgent(
     let fullResponse = '';
     let toolCallCount = 0;
 
-    session.on('assistant.message', (event) => {
+    session.on('assistant.message', (event: any) => {
       fullResponse = event.data.content;
       if (context.onChunk) {
         context.onChunk(fullResponse);
       }
     });
 
-    session.on('assistant.message_delta', (event) => {
+    session.on('assistant.message_delta', (event: any) => {
       if (context.onChunk) {
         context.onChunk(event.data.deltaContent);
       }
     });
 
-    session.on('tool.invocation', (event) => {
+    session.on('tool.invocation', (event: any) => {
       toolCallCount++;
       log.info(`Tool invoked: ${event.data.tool} (#${toolCallCount})`);
       if (context.onToolCall) {
@@ -97,11 +121,11 @@ export async function runCopilotAgent(
       }
     });
 
-    session.on('tool.execution_start', (event) => {
+    session.on('tool.execution_start', (event: any) => {
       log.info(`Tool execution started: ${event.data.tool}`);
     });
 
-    session.on('tool.execution_end', (event) => {
+    session.on('tool.execution_end', (event: any) => {
       log.info(`Tool execution ended: ${event.data.tool}`);
     });
 
@@ -112,7 +136,7 @@ export async function runCopilotAgent(
 
     // Wait for session to complete
     // Note: session.idle timing issue exists but doesn't affect functionality
-    await new Promise((resolve) => {
+    await new Promise<void>((resolve) => {
       const timeout = setTimeout(resolve, config.maxTurns ? config.maxTurns * 5000 : 30000);
       session.on('session.idle', () => {
         clearTimeout(timeout);

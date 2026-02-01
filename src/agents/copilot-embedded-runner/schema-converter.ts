@@ -69,7 +69,7 @@ function convertProperty(schema: any): z.ZodTypeAny {
         }
         return objectSchema;
       }
-      return z.record(z.any());
+      return z.record(z.string(), z.any());
 
     default:
       return z.any();
