@@ -8,6 +8,11 @@
 
 import { CopilotSDK } from '@github/copilot-sdk';
 import type { AgentRunContext, AgentRunResult } from '../agent-types.js';
+import { 
+  convertToolsToCopilotFormat, 
+  extractToolResultText,
+  isToolResultError 
+} from './tool-bridge.js';
 
 interface CopilotAgentConfig {
   model?: string;
@@ -46,16 +51,8 @@ export async function runCopilotAgent(
       content: msg.content,
     }));
 
-    // Convert OpenClaw tools to Copilot tool definitions
-    const copilotTools = tools?.map(tool => ({
-      name: tool.name,
-      description: tool.description,
-      parameters: tool.input_schema,
-      function: async (params: any) => {
-        // Execute the tool using OpenClaw's tool execution system
-        return await executeOpenClawTool(tool.name, params, context);
-      },
-    }));
+    // Convert OpenClaw tools to Copilot SDK format with execution bridge
+    const copilotTools = tools ? convertToolsToCopilotFormat(tools, context) : [];
 
     // Create agent session
     const session = await copilot.createSession({
@@ -103,18 +100,4 @@ export async function runCopilotAgent(
     // Clean up SDK client
     await copilot.shutdown();
   }
-}
-
-/**
- * Execute an OpenClaw tool using the existing tool execution system
- */
-async function executeOpenClawTool(
-  toolName: string,
-  params: any,
-  context: AgentRunContext
-): Promise<any> {
-  // This bridges Copilot SDK tool calls back to OpenClaw's tool system
-  // TODO: Implement proper tool execution bridge
-  console.log(`[Copilot] Executing tool: ${toolName}`, params);
-  return { result: 'Tool execution not yet implemented' };
 }
