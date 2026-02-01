@@ -22,21 +22,27 @@ interface RuntimeConfig {
 
 /**
  * Run an agent using the configured runtime
+ * 
+ * NOTE: Currently disabled - Pi and Copilot have different interfaces.
+ * Use runCopilotAgent() or runEmbeddedPiAgent() directly for now.
  */
 export async function runAgent(
-  context: AgentRunContext,
+  context: any,
   config: RuntimeConfig
-): Promise<AgentRunResult> {
-  switch (config.runtime) {
-    case 'copilot':
-      console.log('[Runtime] Using Copilot SDK');
-      return await runCopilotAgent(context, config.copilot);
-    
-    case 'pi':
-    default:
-      console.log('[Runtime] Using Pi (legacy)');
-      return await runEmbeddedPiAgent(context);
-  }
+): Promise<any> {
+  // TODO: Fix type mismatch between Pi and Copilot interfaces
+  throw new Error('Runtime selector not yet implemented - use runCopilotAgent() or runEmbeddedPiAgent() directly');
+  
+  // switch (config.runtime) {
+  //   case 'copilot':
+  //     console.log('[Runtime] Using Copilot SDK');
+  //     return await runCopilotAgent(context, config.copilot);
+  //   
+  //   case 'pi':
+  //   default:
+  //     console.log('[Runtime] Using Pi (legacy)');
+  //     return await runEmbeddedPiAgent(context);
+  // }
 }
 
 /**

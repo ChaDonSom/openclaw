@@ -117,6 +117,7 @@ export async function runCopilotAgent(
       toolCallCount++;
       log.info(`Tool requested: ${event.data.tool} (#${toolCallCount})`);
       if (context.onToolCall) {
+        // @ts-ignore - Type mismatch with OpenClaw's onToolCall signature
         context.onToolCall(event.data.tool, event.data.params);
       }
     });

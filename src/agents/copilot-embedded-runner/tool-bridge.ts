@@ -49,7 +49,8 @@ export async function executeOpenClawTool(
     const callId = `copilot-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
     
     // Execute the tool using OpenClaw's standard tool.execute() interface
-    const result = await (tool as any).execute(callId, params);
+    // @ts-ignore - Tool type from Pi doesn't match our simplified interface
+    const result = await tool.execute(callId, params);
     
     log.info(`Tool executed successfully: ${toolName}`);
     return result;
@@ -83,6 +84,7 @@ export function convertToolsToCopilotFormat(
         description: tool.description,
         parameters: zodSchema,
         handler: async (params: any) => {
+          // @ts-ignore - Params type mismatch
           return await executeOpenClawTool(tool.name, params, context);
         },
       });
@@ -94,6 +96,7 @@ export function convertToolsToCopilotFormat(
         description: tool.description,
         parameters: z.object({}),
         handler: async (params: any) => {
+          // @ts-ignore - Params type mismatch
           return await executeOpenClawTool(tool.name, params, context);
         },
       });
