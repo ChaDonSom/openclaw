@@ -2,12 +2,17 @@
  * Tool Execution Bridge: Copilot SDK ↔ OpenClaw
  * 
  * This module bridges Copilot SDK tool calls back to OpenClaw's tool execution system.
- * Key insight: OpenClaw tools have an execute() method that takes (callId, params).
+ * Key requirements:
+ * - Must use Zod schemas (not plain JSON Schema)
+ * - Tools execute via OpenClaw's tool.execute(callId, params) interface
  */
 
 import type { AnyAgentTool } from '../tools/common.js';
 import type { AgentRunContext } from '../agent-types.js';
 import { createSubsystemLogger } from '../../logging/subsystem.js';
+import { jsonSchemaToZod } from './schema-converter.js';
+import { defineTool } from '@github/copilot-sdk';
+import type { Tool } from '@github/copilot-sdk';
 
 const log = createSubsystemLogger('copilot-bridge');
 
@@ -63,24 +68,40 @@ export async function executeOpenClawTool(
 
 /**
  * Convert OpenClaw tools to Copilot SDK tool format
+ * 
+ * CRITICAL: Copilot SDK requires Zod schemas, not plain JSON Schema.
+ * This function converts OpenClaw's input_schema to Zod objects.
  */
 export function convertToolsToCopilotFormat(
   openClawTools: AnyAgentTool[],
   context: AgentRunContext
-): Array<{
-  name: string;
-  description: string;
-  parameters: any;
-  function: (params: any) => Promise<any>;
-}> {
-  return openClawTools.map((tool) => ({
-    name: tool.name,
-    description: tool.description,
-    parameters: tool.input_schema,
-    function: async (params: any) => {
-      return await executeOpenClawTool(tool.name, params, context);
-    },
-  }));
+): Tool[] {
+  return openClawTools.map((tool) => {
+    try {
+      // Convert JSON Schema to Zod
+      const zodSchema = jsonSchemaToZod(tool.input_schema as any);
+      
+      // Create Copilot SDK tool using Zod schema
+      return defineTool(tool.name, {
+        description: tool.description,
+        parameters: zodSchema,
+        handler: async (params: any) => {
+          return await executeOpenClawTool(tool.name, params, context);
+        },
+      });
+    } catch (error) {
+      log.error(`Failed to convert tool ${tool.name}:`, error);
+      // Fallback to a basic Zod schema if conversion fails
+      const { z } = require('zod');
+      return defineTool(tool.name, {
+        description: tool.description,
+        parameters: z.object({}),
+        handler: async (params: any) => {
+          return await executeOpenClawTool(tool.name, params, context);
+        },
+      });
+    }
+  });
 }
 
 /**

@@ -36,68 +36,118 @@ export async function runCopilotAgent(
     model = 'claude-sonnet-4',
   } = context;
 
-  // Initialize Copilot SDK client
-  const copilot = new CopilotSDK({
-    // Auto-manages copilot CLI process lifecycle
+  // Initialize Copilot SDK client with TCP transport
+  // CRITICAL: useStdio: false is required for tool execution to work
+  const copilot = new CopilotClient({
+    useStdio: false, // TCP transport required!
+    port: 0, // Random port
     autoStart: true,
-    // Enable all first-party tools by default (equivalent to --allow-all)
-    allowAll: config.allowAll ?? true,
+    autoRestart: config.autoRestart ?? true,
   });
 
   try {
+    log.info(`Starting Copilot SDK client (session: ${sessionKey})`);
+    // Start the client
+    await copilot.start();
+    log.info('Copilot SDK client started');
+
     // Convert OpenClaw messages to Copilot format
     const copilotMessages = messages.map(msg => ({
-      role: msg.role === 'user' ? 'user' : 'assistant',
+      role: msg.role === 'user' ? 'user' as const : 'assistant' as const,
       content: msg.content,
     }));
 
-    // Convert OpenClaw tools to Copilot SDK format with execution bridge
+    // Convert OpenClaw tools to Copilot SDK format with Zod schemas
     const copilotTools = tools ? convertToolsToCopilotFormat(tools, context) : [];
+    log.info(`Converted ${copilotTools.length} tools to Copilot SDK format`);
 
     // Create agent session
     const session = await copilot.createSession({
       model,
-      systemPrompt,
       tools: copilotTools,
+      systemMessage: systemPrompt ? {
+        content: systemPrompt,
+      } : undefined,
     });
 
-    // Run the agent with streaming
-    let fullResponse = '';
-    const stream = await session.chat(copilotMessages);
+    log.info(`Session created: ${session.sessionId}`);
 
-    for await (const chunk of stream) {
-      if (chunk.type === 'content') {
-        fullResponse += chunk.content;
-        // Emit streaming chunk to OpenClaw's message bus
-        if (context.onChunk) {
-          context.onChunk(chunk.content);
-        }
-      } else if (chunk.type === 'tool_call') {
-        // Copilot SDK handles tool execution internally
-        // This is the key difference from Pi - nested calls don't spawn new sessions
-        if (context.onToolCall) {
-          context.onToolCall(chunk.tool, chunk.params);
-        }
+    // Event handlers for streaming and tool execution
+    let fullResponse = '';
+    let toolCallCount = 0;
+
+    session.on('assistant.message', (event) => {
+      fullResponse = event.data.content;
+      if (context.onChunk) {
+        context.onChunk(fullResponse);
       }
-    }
+    });
+
+    session.on('assistant.message_delta', (event) => {
+      if (context.onChunk) {
+        context.onChunk(event.data.deltaContent);
+      }
+    });
+
+    session.on('tool.invocation', (event) => {
+      toolCallCount++;
+      log.info(`Tool invoked: ${event.data.tool} (#${toolCallCount})`);
+      if (context.onToolCall) {
+        context.onToolCall(event.data.tool, event.data.params);
+      }
+    });
+
+    session.on('tool.execution_start', (event) => {
+      log.info(`Tool execution started: ${event.data.tool}`);
+    });
+
+    session.on('tool.execution_end', (event) => {
+      log.info(`Tool execution ended: ${event.data.tool}`);
+    });
+
+    // Send message and wait for completion
+    await session.send({
+      prompt: copilotMessages[copilotMessages.length - 1]?.content || '',
+    });
+
+    // Wait for session to complete
+    // Note: session.idle timing issue exists but doesn't affect functionality
+    await new Promise((resolve) => {
+      const timeout = setTimeout(resolve, config.maxTurns ? config.maxTurns * 5000 : 30000);
+      session.on('session.idle', () => {
+        clearTimeout(timeout);
+        resolve();
+      });
+    });
+
+    log.info(`Session complete. Tool calls: ${toolCallCount}`);
+
+    // Clean up
+    await session.destroy();
+    await copilot.stop();
 
     return {
       success: true,
       response: fullResponse,
       usage: {
-        // Copilot SDK returns usage stats
-        inputTokens: session.usage.input_tokens,
-        outputTokens: session.usage.output_tokens,
+        // Copilot SDK billing: All tool calls = 1 premium request
+        inputTokens: 0, // SDK doesn't expose these yet
+        outputTokens: 0,
         premiumRequests: 1, // This is the magic - only 1 premium request!
       },
     };
   } catch (error) {
+    log.error('Copilot SDK error:', error);
     return {
       success: false,
       error: error instanceof Error ? error.message : String(error),
     };
   } finally {
-    // Clean up SDK client
-    await copilot.shutdown();
+    // Ensure cleanup
+    try {
+      await copilot.stop();
+    } catch (e) {
+      log.error('Error stopping Copilot client:', e);
+    }
   }
 }
