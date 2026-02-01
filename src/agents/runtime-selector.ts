@@ -4,9 +4,9 @@
  * Allows switching between Pi and Copilot SDK runtimes via config.
  */
 
-import type { AgentRunContext, AgentRunResult } from '../agent-types.js';
-import { runEmbeddedPiAgent } from '../pi-embedded-runner/run.js';
-import { runCopilotAgent } from '../copilot-embedded-runner/run.js';
+import type { AgentRunContext, AgentRunResult } from './agent-types.js';
+import { runEmbeddedPiAgent } from './pi-embedded-runner/run.js';
+import { runCopilotAgent } from './copilot-embedded-runner/run.js';
 
 export type AgentRuntime = 'pi' | 'copilot';
 

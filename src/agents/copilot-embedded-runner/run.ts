@@ -113,9 +113,9 @@ export async function runCopilotAgent(
       }
     });
 
-    session.on('tool.invocation', (event: any) => {
+    session.on('tool.user_requested', (event: any) => {
       toolCallCount++;
-      log.info(`Tool invoked: ${event.data.tool} (#${toolCallCount})`);
+      log.info(`Tool requested: ${event.data.tool} (#${toolCallCount})`);
       if (context.onToolCall) {
         context.onToolCall(event.data.tool, event.data.params);
       }
@@ -125,8 +125,8 @@ export async function runCopilotAgent(
       log.info(`Tool execution started: ${event.data.tool}`);
     });
 
-    session.on('tool.execution_end', (event: any) => {
-      log.info(`Tool execution ended: ${event.data.tool}`);
+    session.on('tool.execution_complete', (event: any) => {
+      log.info(`Tool execution complete: ${event.data.tool}`);
     });
 
     // Send message and wait for completion

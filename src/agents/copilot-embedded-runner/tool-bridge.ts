@@ -7,12 +7,9 @@
  * - Tools execute via OpenClaw's tool.execute(callId, params) interface
  */
 
-import type { AnyAgentTool } from '../tools/common.js';
-import type { AgentRunContext } from '../agent-types.js';
 import { createSubsystemLogger } from '../../logging/subsystem.js';
 import { jsonSchemaToZod } from './schema-converter.js';
 import { defineTool } from '@github/copilot-sdk';
-import type { Tool } from '@github/copilot-sdk';
 
 const log = createSubsystemLogger('copilot-bridge');
 
@@ -21,7 +18,7 @@ const log = createSubsystemLogger('copilot-bridge');
  */
 export async function executeOpenClawTool(
   toolName: string,
-  params: Record<string, unknown>,
+  params: any,
   context: any
 ): Promise<any> {
   const { tools, sessionKey } = context;
@@ -75,7 +72,7 @@ export async function executeOpenClawTool(
 export function convertToolsToCopilotFormat(
   openClawTools: any[],
   context: any
-): Tool[] {
+): any[] {
   return openClawTools.map((tool: any) => {
     try {
       // Convert JSON Schema to Zod
@@ -85,7 +82,7 @@ export function convertToolsToCopilotFormat(
       return defineTool(tool.name, {
         description: tool.description,
         parameters: zodSchema,
-        handler: async (params: Record<string, unknown>) => {
+        handler: async (params: any) => {
           return await executeOpenClawTool(tool.name, params, context);
         },
       });
@@ -96,7 +93,7 @@ export function convertToolsToCopilotFormat(
       return defineTool(tool.name, {
         description: tool.description,
         parameters: z.object({}),
-        handler: async (params: Record<string, unknown>) => {
+        handler: async (params: any) => {
           return await executeOpenClawTool(tool.name, params, context);
         },
       });
